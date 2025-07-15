@@ -1,552 +1,588 @@
 ---
 layout: single
-title: "ptrace: Hooking System Calls in Linux - Fundamental Part 01"
+title: "ptrace System Call Hooking in Python - Building a File Access Monitor"
 date: 2025-07-15
-categories: [linux, security, reverse-engineering]
-tags: [ptrace, system-calls, debugging, hooking, linux-internals]
+categories: [linux, security, system-monitoring]
+tags: [ptrace, python, syscalls, file-monitoring, security-tools]
 toc: true
 toc_label: "Contents"
 toc_icon: "cog"
-excerpt: "Deep dive into ptrace fundamentals - understanding how to intercept and modify system calls in Linux for debugging, security analysis, and reverse engineering."
-header:
-  teaser: /assets/images/ptrace-teaser.jpg
+excerpt: "Learn to build a Python-based file access monitoring tool using ptrace to intercept and analyze system calls for security monitoring and process behavior analysis."
 ---
 
 ## Overview
-**Target Audience:** Security researchers, reverse engineers, systems programmers  
+**Target Audience:** Security researchers, system administrators, Python developers  
 **Reading Time:** 15-20 minutes  
 **Difficulty Level:** Intermediate to Advanced  
 **What You'll Learn:**
-- Understanding ptrace fundamentals and system call interception
-- Implementing basic system call hooking mechanisms
-- Analyzing process behavior through ptrace
-- Building foundation for advanced debugging techniques
-- Security implications of ptrace-based monitoring
+- Building ptrace-based monitoring tools in Python
+- Intercepting file-related system calls (open, read, write, close)
+- Process behavior analysis and security monitoring
+- Python ctypes integration with low-level system interfaces
+- Real-time file access auditing techniques
 
 **Prerequisites:** 
-- Strong C programming knowledge
+- Strong Python programming knowledge
 - Basic understanding of Linux system calls
 - Familiarity with process management concepts
-- Assembly language basics (helpful but not required)
+- Command line experience
 
 ## Introduction
 
-### The Power of Process Tracing
+### The Need for File Access Monitoring
 
-Imagine having x-ray vision into any running process on a Linux system. What if you could intercept every system call, examine arguments, modify return values, and even inject your own code? This isn't science fiction - it's the reality of `ptrace`, one of Linux's most powerful yet underutilized debugging interfaces.
+In today's security landscape, understanding what files a process accesses is crucial for:
+- Security incident response and forensics
+- Malware behavior analysis  
+- Compliance monitoring and audit trails
+- Detecting unauthorized file access
+- Understanding application behavior
 
-### Why This Matters
+### Why ptrace + Python?
 
-In the world of cybersecurity, reverse engineering, and systems programming, understanding how processes interact with the kernel is crucial. Whether you're:
-- Analyzing malware behavior
-- Building security monitoring tools
-- Debugging complex applications
-- Developing dynamic analysis frameworks
-- Creating sandboxing solutions
-
-`ptrace` is your gateway to unprecedented process visibility and control.
+While traditional tools like `strace` provide basic system call tracing, building a custom solution offers:
+- **Programmatic control** - Filter and process events in real-time
+- **Enhanced logging** - Rich metadata and context
+- **Integration capabilities** - Easy connection to larger security frameworks
+- **Customization** - Tailor monitoring to specific needs
 
 ### What We'll Build
 
-In this fundamental series, we'll construct a complete system call hooking framework from scratch, starting with basic concepts and progressing to advanced techniques. By the end of Part 01, you'll have a working system call interceptor that can monitor and modify process behavior in real-time.
+We'll construct a complete file access monitoring system that can:
+- Attach to any running process
+- Monitor file operations (open, read, write, close)
+- Provide detailed metadata including permissions, ownership, and timestamps
+- Display real-time file access events with context
 
 ## Problem Statement
 
 ### The Challenge
 
-Modern software operates as a black box - we see inputs and outputs, but the internal behavior remains hidden. Traditional debugging tools provide snapshots, but they lack the granular control needed for:
+System administrators and security teams need visibility into file access patterns but face limitations:
 
-- **Real-time system call analysis** - Understanding exactly how a process interacts with the kernel
-- **Dynamic behavior modification** - Changing program flow without source code access
-- **Security monitoring** - Detecting malicious behavior patterns
-- **Reverse engineering** - Understanding proprietary software internals
+- **Black box processes** - No insight into what files applications access
+- **Performance overhead** - Traditional monitoring tools can be resource-intensive
+- **Limited context** - Basic tools show operations but lack rich metadata
+- **Integration gaps** - Difficulty connecting monitoring to security workflows
 
-### Current Limitations
+### Our Solution Approach
 
-Existing tools like `strace` provide system call tracing but lack:
-- Bidirectional control (modification capabilities)
-- Programmatic interfaces for automation
-- Fine-grained filtering and processing
-- Integration with larger analysis frameworks
-
-## Background & Context
-
-### Historical Evolution
-
-The `ptrace` system call has its roots in early Unix debugging needs. Originally designed for implementing debuggers like `gdb`, it has evolved into a comprehensive process control interface. Understanding this evolution helps us appreciate its current capabilities and limitations.
-
-### Technical Foundation
-
-At its core, `ptrace` provides a mechanism for one process (the tracer) to control another process (the tracee). This control includes:
-
-- **Execution control** - Starting, stopping, and single-stepping
-- **Memory access** - Reading and writing process memory
-- **Register manipulation** - Examining and modifying CPU registers
-- **Signal interception** - Controlling signal delivery
-- **System call interception** - The focus of our exploration
-
-### Security Model
-
-`ptrace` operates under strict security constraints:
-- Only processes with appropriate privileges can trace others
-- Parent-child relationships provide natural tracing rights
-- SELinux and other security frameworks can restrict usage
-- Modern kernel protections prevent abuse
+We'll build a Python-based monitoring tool that leverages ptrace to provide:
+- Real-time file access monitoring with minimal overhead
+- Rich metadata including file permissions, ownership, and timestamps
+- Flexible filtering and customization options
+- Clean, readable output suitable for analysis
 
 ## Core Concepts
 
-### Concept 1: The ptrace System Call Interface
+### Concept 1: Python ctypes and ptrace Integration
 
-**Definition:** `ptrace` is a system call that provides process tracing and debugging capabilities through a unified interface.
+**Definition:** Using Python's ctypes library to interface directly with the ptrace system call, enabling low-level process control from high-level Python code.
 
-**Function Signature:**
-```c
-long ptrace(enum __ptrace_request request, pid_t pid, void *addr, void *data);
-```
-
-**Why It Matters:** This single interface provides access to all process control operations, making it the foundation for any advanced debugging or analysis tool.
+**Why It Matters:** This combination provides the power of C-level system programming with Python's ease of use and rapid development capabilities.
 
 **Key Components:**
-- **request**: Operation type (PTRACE_ATTACH, PTRACE_SYSCALL, etc.)
-- **pid**: Target process identifier
-- **addr**: Memory address for operations
-- **data**: Operation-specific data
+- **ctypes.CDLL** - Interface to libc for ptrace calls
+- **Structure classes** - Represent C structures in Python
+- **Register access** - Reading CPU registers to extract syscall information
 
-### Concept 2: System Call Interception Points
+### Concept 2: File System Call Interception
 
-**Definition:** The kernel provides specific points where ptrace can intercept system calls - before execution (syscall-enter) and after completion (syscall-exit).
+**Definition:** Monitoring specific system calls related to file operations to track process file access behavior.
 
-**Why It Matters:** These interception points allow complete control over system call flow, enabling modification of arguments, return values, and even call replacement.
+**Target System Calls:**
+- **open/openat** - File opening operations
+- **read** - Reading data from files
+- **write** - Writing data to files  
+- **close** - Closing file descriptors
 
-**Key States:**
-- **syscall-enter-stop**: Process stopped before system call execution
-- **syscall-exit-stop**: Process stopped after system call completion
-- **signal-delivery-stop**: Process stopped for signal delivery
+### Concept 3: Process Context and Metadata
 
-### Concept 3: Process State Management
+**Definition:** Enriching basic system call information with process details and file metadata to provide comprehensive monitoring context.
 
-**Definition:** Traced processes exist in various states that determine available operations and control flow.
-
-**State Transitions:**
-```
-Running → syscall-enter-stop → syscall-exit-stop → Running
-    ↓                    ↓                    ↓
-Signal-stop ←───────────────────────────────────
-```
+**Enhanced Information:**
+- Process name, user, and command line
+- File permissions, ownership, and timestamps
+- File descriptor to path mapping
+- Socket information for network connections
 
 ## Step-by-Step Implementation
 
-### Phase 1: Basic Tracer Setup
+### Phase 1: Core Infrastructure
 
-**Time Required:** 30 minutes  
-**Prerequisites:** GCC compiler, Linux development environment
+#### Step 1: Main Entry Point (`main.py`)
 
-#### Step 1: Tracer Process Foundation
+```python
+#!/usr/bin/env python3
+import sys
+import signal
+from tracer import ProcessTracer
+from utils import validate_pid, get_process_info
 
-```c
-#include <sys/ptrace.h>
-#include <sys/wait.h>
-#include <sys/user.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
+def signal_handler(signum, frame):
+    print("\n[INFO] Shutting down...")
+    sys.exit(0)
 
-typedef struct {
-    pid_t child_pid;
-    int status;
-    struct user_regs_struct regs;
-} tracer_context_t;
-
-int initialize_tracer(tracer_context_t *ctx) {
-    pid_t pid = fork();
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python main.py <PID>")
+        sys.exit(1)
     
-    if (pid == 0) {
-        // Child process - the tracee
-        if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) == -1) {
-            perror("ptrace TRACEME failed");
-            exit(1);
-        }
-        
-        // Execute target program
-        execl("/bin/ls", "ls", "-la", NULL);
-        perror("execl failed");
-        exit(1);
-    } else if (pid > 0) {
-        // Parent process - the tracer
-        ctx->child_pid = pid;
-        
-        // Wait for child to stop after execve
-        if (waitpid(pid, &ctx->status, 0) == -1) {
-            perror("waitpid failed");
-            return -1;
-        }
-        
-        printf("Child process %d attached and stopped\n", pid);
-        return 0;
-    } else {
-        perror("fork failed");
-        return -1;
-    }
-}
+    try:
+        pid = int(sys.argv[1])
+    except ValueError:
+        print("Error: PID must be a number")
+        sys.exit(1)
+    
+    if not validate_pid(pid):
+        print(f"Error: Process {pid} not found or not accessible")
+        sys.exit(1)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    process_name = get_process_info(pid)
+    print(f"[INFO] Monitoring file access for PID {pid} ({process_name})")
+    print("[INFO] Press Ctrl+C to stop")
+    print("-" * 50)
+    
+    tracer = ProcessTracer(pid)
+    try:
+        tracer.attach()
+        tracer.monitor_syscalls()
+    except PermissionError:
+        print("Error: Permission denied. Try running with sudo.")
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == '__main__':
+    main()
 ```
 
-**Explanation:** This foundation establishes the tracer-tracee relationship. The child process calls `PTRACE_TRACEME` to indicate it should be traced, then executes the target program. The parent waits for the initial stop.
+**Explanation:** This entry point handles command-line arguments, validates the target PID, and initializes the monitoring system with proper error handling.
 
-#### Step 2: System Call Interception Loop
+#### Step 2: System Call Definitions (`syscalls.py`)
 
-```c
-int trace_syscalls(tracer_context_t *ctx) {
-    int syscall_entry = 1;  // Track syscall entry/exit
-    
-    // Enable syscall tracing
-    if (ptrace(PTRACE_SETOPTIONS, ctx->child_pid, 0, 
-               PTRACE_O_TRACESYSGOOD) == -1) {
-        perror("PTRACE_SETOPTIONS failed");
-        return -1;
-    }
-    
-    while (1) {
-        // Continue execution until next syscall
-        if (ptrace(PTRACE_SYSCALL, ctx->child_pid, 0, 0) == -1) {
-            perror("PTRACE_SYSCALL failed");
-            break;
-        }
+```python
+# x86_64 syscall numbers for file operations
+FILE_SYSCALLS = {
+    0: 'read',
+    1: 'write', 
+    2: 'open',
+    3: 'close',
+    257: 'openat',
+}
+
+# Syscall argument positions (x86_64 calling convention)
+SYSCALL_ARGS = {
+    'open': ['filename', 'flags', 'mode'],      # rdi, rsi, rdx
+    'openat': ['dirfd', 'filename', 'flags', 'mode'],  # rdi, rsi, rdx, r10
+    'read': ['fd', 'buffer', 'count'],          # rdi, rsi, rdx
+    'write': ['fd', 'buffer', 'count'],         # rdi, rsi, rdx
+    'close': ['fd'],                            # rdi
+}
+
+def is_file_syscall(syscall_num):
+    """Check if syscall is file-related"""
+    return syscall_num in FILE_SYSCALLS
+
+def get_syscall_name(syscall_num):
+    """Get syscall name from number"""
+    return FILE_SYSCALLS.get(syscall_num, f"syscall_{syscall_num}")
+```
+
+### Phase 2: Process Tracing Implementation
+
+#### Step 3: Core Tracer Class (`tracer.py`)
+
+```python
+import os
+import sys
+import ctypes
+import signal
+from ctypes import c_long, c_int, c_void_p, Structure
+from syscalls import is_file_syscall, get_syscall_name
+from utils import format_flags, fd_to_path, get_process_info
+import time
+
+# ptrace constants
+PTRACE_ATTACH = 16
+PTRACE_DETACH = 17
+PTRACE_SYSCALL = 24
+PTRACE_GETREGS = 12
+
+class user_regs_struct(Structure):
+    """x86_64 register structure for accessing syscall arguments"""
+    _fields_ = [
+        ("r15", c_long), ("r14", c_long), ("r13", c_long), ("r12", c_long),
+        ("rbp", c_long), ("rbx", c_long), ("r11", c_long), ("r10", c_long),
+        ("r9", c_long), ("r8", c_long), ("rax", c_long), ("rcx", c_long),
+        ("rdx", c_long), ("rsi", c_long), ("rdi", c_long), ("orig_rax", c_long),
+        ("rip", c_long), ("cs", c_long), ("eflags", c_long), ("rsp", c_long),
+        ("ss", c_long), ("fs_base", c_long), ("gs_base", c_long),
+        ("ds", c_long), ("es", c_long), ("fs", c_long), ("gs", c_long),
+    ]
+
+class ProcessTracer:
+    def __init__(self, pid):
+        self.pid = pid
+        self.libc = ctypes.CDLL("libc.so.6")
+        self.attached = False
+        self.process_info = get_process_info(pid)
         
-        // Wait for syscall stop
-        if (waitpid(ctx->child_pid, &ctx->status, 0) == -1) {
-            perror("waitpid failed");
-            break;
-        }
+        if self.process_info:
+            print(f"[INFO] Process details:")
+            print(f"  Name: {self.process_info['name']}")
+            print(f"  User: {self.process_info['user']}")
+            print(f"  Command: {self.process_info['cmdline']}")
+            print(f"  Working Dir: {self.process_info['cwd']}")
+            print(f"  Started: {self.process_info['start_time']}")
+            print("-" * 50)
         
-        // Check if process exited
-        if (WIFEXITED(ctx->status)) {
-            printf("Process exited with status %d\n", 
-                   WEXITSTATUS(ctx->status));
-            break;
-        }
+    def attach(self):
+        """Attach to target process using ptrace"""
+        result = self.libc.ptrace(PTRACE_ATTACH, self.pid, 0, 0)
+        if result == -1:
+            raise Exception(f"Failed to attach to PID {self.pid}")
+        os.waitpid(self.pid, 0)
+        self.attached = True
+        print(f"[INFO] Attached to process {self.pid}")
         
-        // Check if stopped by signal
-        if (WIFSTOPPED(ctx->status)) {
-            int signal = WSTOPSIG(ctx->status);
+    def detach(self):
+        """Detach from process cleanly"""
+        if self.attached:
+            self.libc.ptrace(PTRACE_DETACH, self.pid, 0, 0)
+            self.attached = False
+            print(f"[INFO] Detached from process {self.pid}")
+```
+
+#### Step 4: Memory Reading and Syscall Parsing
+
+```python
+    def read_string(self, address, max_len=256):
+        """Read null-terminated string from process memory"""
+        if address == 0:
+            return None
+        result = ""
+        for i in range(0, max_len, 8):
+            try:
+                data = self.libc.ptrace(1, self.pid, address + i, 0)  # PTRACE_PEEKDATA
+                if data == -1:
+                    break
+                bytes_data = data.to_bytes(8, 'little')
+                for byte in bytes_data:
+                    if byte == 0:
+                        return result
+                    result += chr(byte)
+            except:
+                break
+        return result
+
+    def parse_syscall_args(self, regs, syscall_name):
+        """Extract syscall arguments based on x86_64 calling convention"""
+        args = {}
+        if syscall_name == 'open':
+            args['filename'] = self.read_string(regs.rdi)
+            args['flags'] = regs.rsi
+            args['mode'] = regs.rdx
+        elif syscall_name == 'openat':
+            args['dirfd'] = regs.rdi
+            args['filename'] = self.read_string(regs.rsi)
+            args['flags'] = regs.rdx
+            args['mode'] = regs.r10
+        elif syscall_name in ['read', 'write']:
+            args['fd'] = regs.rdi
+            args['count'] = regs.rdx
+        elif syscall_name == 'close':
+            args['fd'] = regs.rdi
+        return args
+```
+
+### Phase 3: Enhanced Logging and Monitoring
+
+#### Step 5: Rich File Access Logging
+
+```python
+    def log_file_access(self, timestamp, syscall_name, args):
+        """Enhanced log file access event with detailed information"""
+        proc_name = self.process_info['name'] if self.process_info else 'unknown'
+        proc_user = self.process_info['user'] if self.process_info else 'unknown'
+        
+        if syscall_name in ['open', 'openat']:
+            filename = args.get('filename', 'unknown')
+            flags = format_flags(args.get('flags', 0))
+            mode = oct(args.get('mode', 0))[-4:]
+            print(f"[{timestamp}] {proc_name}({self.pid})[{proc_user}] OPEN: {filename}")
+            print(f"  Flags: {flags}")
+            print(f"  Mode: {mode}")
             
-            // Check if it's a syscall stop (signal 133 with PTRACE_O_TRACESYSGOOD)
-            if (signal == (SIGTRAP | 0x80)) {
-                handle_syscall_stop(ctx, syscall_entry);
-                syscall_entry = !syscall_entry;  // Toggle entry/exit
-            } else {
-                printf("Process stopped by signal %d\n", signal);
-            }
-        }
-    }
-    
-    return 0;
-}
+        elif syscall_name == 'read':
+            fd = args.get('fd', -1)
+            count = args.get('count', 0)
+            path = fd_to_path(self.pid, fd)
+            print(f"[{timestamp}] {proc_name}({self.pid})[{proc_user}] READ: {path}")
+            print(f"  Bytes requested: {count}")
+            
+        elif syscall_name == 'write':
+            fd = args.get('fd', -1)
+            count = args.get('count', 0)
+            path = fd_to_path(self.pid, fd)
+            print(f"[{timestamp}] {proc_name}({self.pid})[{proc_user}] WRITE: {path}")
+            print(f"  Bytes written: {count}")
+            
+        elif syscall_name == 'close':
+            fd = args.get('fd', -1)
+            path = fd_to_path(self.pid, fd)
+            print(f"[{timestamp}] {proc_name}({self.pid})[{proc_user}] CLOSE: {path}")
+
+    def monitor_syscalls(self):
+        """Main monitoring loop with enhanced file syscall handling"""
+        try:
+            while True:
+                self.continue_syscall()
+                regs = self.get_registers()
+                if regs:
+                    self.handle_syscall(regs)
+                self.continue_syscall()
+        except KeyboardInterrupt:
+            print("\n[INFO] Monitoring stopped")
+        except ProcessLookupError:
+            print(f"[INFO] Process {self.pid} terminated")
+        finally:
+            self.detach()
 ```
 
-#### Step 3: System Call Analysis
+#### Step 6: Utility Functions (`utils.py`)
 
-```c
-void handle_syscall_stop(tracer_context_t *ctx, int is_entry) {
-    // Get current register state
-    if (ptrace(PTRACE_GETREGS, ctx->child_pid, 0, &ctx->regs) == -1) {
-        perror("PTRACE_GETREGS failed");
-        return;
-    }
-    
-    if (is_entry) {
-        // System call entry - analyze arguments
-        long syscall_num = ctx->regs.orig_rax;
-        
-        printf("SYSCALL ENTRY: %ld (", syscall_num);
-        printf("arg0=0x%llx, ", ctx->regs.rdi);
-        printf("arg1=0x%llx, ", ctx->regs.rsi);
-        printf("arg2=0x%llx)\n", ctx->regs.rdx);
-        
-        // Example: Hook write syscall
-        if (syscall_num == 1) {  // SYS_write
-            hook_write_syscall(ctx);
+```python
+import os
+import pwd
+import grp
+import psutil
+from datetime import datetime
+
+def get_process_info(pid):
+    """Get comprehensive process information"""
+    try:
+        proc = psutil.Process(pid)
+        return {
+            'name': proc.name(),
+            'user': proc.username(),
+            'cmdline': ' '.join(proc.cmdline()),
+            'cwd': proc.cwd(),
+            'start_time': datetime.fromtimestamp(proc.create_time()).strftime('%Y-%m-%d %H:%M:%S')
         }
-    } else {
-        // System call exit - analyze return value
-        printf("SYSCALL EXIT: return=0x%llx\n", ctx->regs.rax);
-    }
-}
+    except:
+        return None
 
-void hook_write_syscall(tracer_context_t *ctx) {
-    // Read the data being written
-    long data_addr = ctx->regs.rsi;
-    long data_len = ctx->regs.rdx;
-    
-    printf("HOOK: write() detected - fd=%lld, len=%ld\n", 
-           ctx->regs.rdi, data_len);
-    
-    // Read data from tracee memory
-    char buffer[256];
-    long bytes_to_read = (data_len < 255) ? data_len : 255;
-    
-    for (int i = 0; i < bytes_to_read; i += sizeof(long)) {
-        long word = ptrace(PTRACE_PEEKDATA, ctx->child_pid, 
-                          data_addr + i, 0);
-        if (errno != 0) {
-            perror("PTRACE_PEEKDATA failed");
-            break;
-        }
-        memcpy(buffer + i, &word, sizeof(long));
-    }
-    
-    buffer[bytes_to_read] = '\0';
-    printf("HOOK: Data being written: '%.100s'\n", buffer);
-}
-```
+def fd_to_path(pid, fd):
+    """Enhanced fd to path resolution with metadata"""
+    try:
+        path = os.readlink(f'/proc/{pid}/fd/{fd}')
+        
+        # Handle different types of file descriptors
+        if path.startswith('socket:['):
+            inode = path.split('[')[1].rstrip(']')
+            return get_socket_info(pid, inode)
+        elif os.path.exists(path):
+            metadata = get_file_metadata(path)
+            return f"{path} ({metadata})" if metadata else path
+        else:
+            return path
+    except Exception as e:
+        return f'fd={fd}'
 
-### Phase 2: Advanced Hooking Mechanisms
-
-#### Step 4: System Call Modification
-
-```c
-void modify_syscall(tracer_context_t *ctx) {
-    // Example: Redirect write calls to a different file descriptor
-    if (ctx->regs.orig_rax == 1 && ctx->regs.rdi == 1) {  // stdout write
-        printf("MODIFY: Redirecting stdout write to stderr\n");
-        
-        // Change file descriptor from 1 (stdout) to 2 (stderr)
-        ctx->regs.rdi = 2;
-        
-        // Apply modified registers
-        if (ptrace(PTRACE_SETREGS, ctx->child_pid, 0, &ctx->regs) == -1) {
-            perror("PTRACE_SETREGS failed");
-        }
-    }
-}
-
-void block_syscall(tracer_context_t *ctx) {
-    // Example: Block all network-related syscalls
-    long syscall_num = ctx->regs.orig_rax;
-    
-    if (syscall_num == 41 ||   // SYS_socket
-        syscall_num == 42 ||   // SYS_connect
-        syscall_num == 43) {   // SYS_accept
-        
-        printf("BLOCK: Network syscall %ld blocked\n", syscall_num);
-        
-        // Replace with harmless syscall (getpid)
-        ctx->regs.orig_rax = 39;  // SYS_getpid
-        
-        if (ptrace(PTRACE_SETREGS, ctx->child_pid, 0, &ctx->regs) == -1) {
-            perror("PTRACE_SETREGS failed");
-        }
-    }
-}
+def format_flags(flags):
+    """Convert open flags to readable format"""
+    flag_names = []
+    if flags & 0o0:     flag_names.append('O_RDONLY')
+    if flags & 0o1:     flag_names.append('O_WRONLY') 
+    if flags & 0o2:     flag_names.append('O_RDWR')
+    if flags & 0o100:   flag_names.append('O_CREAT')
+    if flags & 0o1000:  flag_names.append('O_TRUNC')
+    if flags & 0o2000:  flag_names.append('O_APPEND')
+    if flags & 0o4000:  flag_names.append('O_NONBLOCK')
+    if flags & 0o200000: flag_names.append('O_CLOEXEC')
+    return '|'.join(flag_names) if flag_names else f'0x{flags:x}'
 ```
 
 ## Real-World Examples
 
-### Example 1: Security Monitoring Tool
+### Example 1: Security Monitoring
 
-**Scenario:** Building a basic sandboxing mechanism that monitors and controls file system access.
+**Scenario:** Monitoring a web server process for suspicious file access patterns.
 
-```c
-typedef struct {
-    char **allowed_paths;
-    int path_count;
-    int violations;
-} sandbox_policy_t;
+```bash
+# Monitor nginx process
+sudo python3 main.py $(pgrep nginx | head -1)
 
-void enforce_sandbox_policy(tracer_context_t *ctx, sandbox_policy_t *policy) {
-    long syscall_num = ctx->regs.orig_rax;
-    
-    // Monitor file-related syscalls
-    if (syscall_num == 2 ||    // SYS_open
-        syscall_num == 257) {  // SYS_openat
-        
-        // Extract filename from syscall arguments
-        char filename[PATH_MAX];
-        long filename_addr = (syscall_num == 2) ? ctx->regs.rdi : ctx->regs.rsi;
-        
-        if (read_string_from_tracee(ctx->child_pid, filename_addr, 
-                                   filename, sizeof(filename)) == 0) {
-            
-            if (!is_path_allowed(filename, policy)) {
-                printf("SANDBOX VIOLATION: Blocked access to %s\n", filename);
-                
-                // Block the syscall by returning EACCES
-                ctx->regs.orig_rax = -1;  // Invalid syscall
-                ptrace(PTRACE_SETREGS, ctx->child_pid, 0, &ctx->regs);
-                
-                policy->violations++;
-            }
-        }
-    }
-}
-
-int read_string_from_tracee(pid_t pid, long addr, char *buffer, size_t size) {
-    size_t i = 0;
-    
-    while (i < size - 1) {
-        long word = ptrace(PTRACE_PEEKDATA, pid, addr + i, 0);
-        if (errno != 0) return -1;
-        
-        // Copy bytes from word
-        for (int j = 0; j < sizeof(long) && i < size - 1; j++, i++) {
-            buffer[i] = (word >> (j * 8)) & 0xFF;
-            if (buffer[i] == '\0') {
-                return 0;  // Success
-            }
-        }
-    }
-    
-    buffer[size - 1] = '\0';
-    return 0;
-}
+# Example output:
+[INFO] Monitoring file access for PID 1234 (nginx)
+[INFO] Process details:
+  Name: nginx
+  User: www-data
+  Command: nginx: worker process
+  Working Dir: /
+  Started: 2025-07-15 10:30:15
+--------------------------------------------------
+[10:45:23] nginx(1234)[www-data] OPEN: /var/log/nginx/access.log
+  Flags: O_WRONLY|O_APPEND
+  Mode: 0644
+[10:45:23] nginx(1234)[www-data] WRITE: /var/log/nginx/access.log (owner=www-data:adm mode=0644 size=1024 mtime=2025-07-15 10:45:23)
+  Bytes written: 127
 ```
 
-## Common Pitfalls & Solutions
+### Example 2: Application Behavior Analysis
 
-### Pitfall 1: Race Conditions in Multi-threaded Programs
+**Scenario:** Understanding what configuration files an application reads during startup.
 
-**Description:** When tracing multi-threaded applications, syscalls from different threads can interfere with each other.
+```bash
+# Start monitoring before application launch
+sudo python3 main.py $(pgrep myapp)
 
-**Symptoms:** 
-- Inconsistent register states
-- Missing syscall events
-- Tracer confusion about execution flow
-
-**Solution:**
-```c
-// Use PTRACE_O_TRACECLONE to handle thread creation
-if (ptrace(PTRACE_SETOPTIONS, ctx->child_pid, 0, 
-           PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACECLONE | 
-           PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK) == -1) {
-    perror("PTRACE_SETOPTIONS failed");
-    return -1;
-}
-
-// Maintain a hash table of thread contexts
-typedef struct thread_context {
-    pid_t tid;
-    struct user_regs_struct regs;
-    int syscall_entry;
-    struct thread_context *next;
-} thread_context_t;
-```
-
-### Pitfall 2: Signal Handling Complexity
-
-**Description:** Signals can interrupt syscall tracing and cause state confusion.
-
-**Solution:**
-```c
-void handle_traced_signal(tracer_context_t *ctx, int signal) {
-    printf("Signal %d delivered to tracee\n", signal);
-    
-    // Decide whether to suppress or forward the signal
-    if (signal == SIGTERM || signal == SIGKILL) {
-        // Allow termination signals
-        ptrace(PTRACE_SYSCALL, ctx->child_pid, 0, signal);
-    } else {
-        // Suppress other signals
-        ptrace(PTRACE_SYSCALL, ctx->child_pid, 0, 0);
-    }
-}
+# Output shows configuration file access:
+[10:50:15] myapp(5678)[user] OPEN: /etc/myapp/config.yaml
+  Flags: O_RDONLY
+  Mode: 0000
+[10:50:15] myapp(5678)[user] READ: /etc/myapp/config.yaml (owner=root:root mode=0644 size=2048 mtime=2025-07-15 09:30:00)
+  Bytes requested: 2048
 ```
 
 ## Performance Considerations
 
 ### Overhead Analysis
 
-Ptrace-based tracing introduces significant overhead:
-- **Context switches**: Every syscall requires multiple context switches
-- **Memory access**: Reading tracee memory is expensive
-- **Processing time**: Analysis adds latency to each syscall
+Our Python implementation introduces overhead through:
+- **Python interpreter** - Additional processing layer
+- **ctypes calls** - Function call overhead for each ptrace operation
+- **String processing** - Memory reading and parsing
 
 ### Optimization Strategies
 
-```c
-// Selective tracing - only trace interesting syscalls
-const long interesting_syscalls[] = {
-    1,   // write
-    2,   // open
-    41,  // socket
-    42,  // connect
-    -1   // sentinel
-};
+1. **Selective Monitoring** - Only trace file-related syscalls
+2. **Efficient Memory Reading** - Read memory in chunks
+3. **Lazy Evaluation** - Only resolve paths when needed
 
-int is_interesting_syscall(long syscall_num) {
-    for (int i = 0; interesting_syscalls[i] != -1; i++) {
-        if (interesting_syscalls[i] == syscall_num) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-// Batch processing - accumulate events before processing
-typedef struct syscall_event {
-    pid_t pid;
-    long syscall_num;
-    long args[6];
-    long return_value;
-    struct timespec timestamp;
-} syscall_event_t;
-
-#define EVENT_BUFFER_SIZE 1000
-syscall_event_t event_buffer[EVENT_BUFFER_SIZE];
-int event_count = 0;
+```python
+# Example optimization: Cache file descriptor mappings
+class ProcessTracer:
+    def __init__(self, pid):
+        # ... existing code ...
+        self.fd_cache = {}  # Cache fd to path mappings
+        
+    def fd_to_path_cached(self, fd):
+        if fd not in self.fd_cache:
+            self.fd_cache[fd] = fd_to_path(self.pid, fd)
+        return self.fd_cache[fd]
 ```
 
-## Next Steps and Part 2 Preview
+## Common Pitfalls & Solutions
 
-In this fundamental introduction, we've covered:
-- Basic ptrace mechanics and system call interception
-- Implementation of a working syscall tracer
-- System call modification and blocking techniques
-- Real-world security monitoring applications
+### Pitfall 1: Permission Errors
 
-**Coming in Part 2:**
-- Advanced memory manipulation techniques
-- Code injection and runtime patching
-- Building a complete dynamic analysis framework
-- Integration with disassemblers and analysis tools
-- Performance optimization for production use
+**Description:** Insufficient privileges to attach to target processes.
+
+**Symptoms:** 
+- "Permission denied" errors
+- Failed ptrace attachment
+
+**Solution:**
+```bash
+# Run with sudo
+sudo python3 main.py <PID>
+
+# Or add capabilities (for production deployment)
+sudo setcap cap_sys_ptrace+ep /usr/bin/python3
+```
+
+### Pitfall 2: Process State Confusion
+
+**Description:** Target process in uninterruptible state or zombie state.
+
+**Solution:**
+```python
+def validate_pid(pid):
+    """Enhanced PID validation with state checking"""
+    try:
+        proc = psutil.Process(pid)
+        if proc.status() in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
+            return False
+        return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+```
+
+## Best Practices
+
+### Security Considerations
+
+1. **Principle of Least Privilege** - Only request necessary permissions
+2. **Input Validation** - Validate all PID inputs
+3. **Error Handling** - Graceful handling of edge cases
+4. **Logging** - Audit trail of monitoring activities
+
+### Code Organization
+
+1. **Modular Design** - Separate concerns into different modules
+2. **Configuration** - Make syscall sets configurable
+3. **Testing** - Unit tests for utility functions
+4. **Documentation** - Clear inline documentation
+
+## Usage Examples
+
+### Basic File Monitoring
+
+```bash
+# Monitor a specific process
+python3 main.py 1234
+
+# Monitor process by name
+python3 main.py $(pgrep firefox)
+
+# Monitor with elevated privileges
+sudo python3 main.py 1234
+```
+
+### Advanced Use Cases
+
+```bash
+# Monitor and log to file
+python3 main.py 1234 | tee file_access.log
+
+# Filter specific file types
+python3 main.py 1234 | grep '\.conf\|\.yaml\|\.json'
+
+# Monitor multiple processes (requires process spawning)
+for pid in $(pgrep nginx); do
+    python3 main.py $pid &
+done
+```
 
 ## Conclusion
 
 ### Key Takeaways
 
-1. **ptrace provides unprecedented process control** - From simple monitoring to complete behavior modification
-2. **System call interception is the foundation** - Understanding syscall flow enables powerful analysis capabilities
-3. **Security applications are abundant** - From sandboxing to malware analysis
-4. **Performance considerations are critical** - Optimization is essential for practical deployment
+1. **Python + ptrace = Powerful Monitoring** - Combining Python's ease with ptrace's capabilities creates effective monitoring tools
+2. **Rich Context Matters** - File metadata and process information provide valuable security insights
+3. **Modular Design Enables Flexibility** - Well-structured code allows easy customization and extension
+4. **Real-time Monitoring Has Security Value** - Live file access tracking enables rapid incident response
 
-### Immediate Actions
+### Next Steps
 
-1. **Compile and run the examples** - Get hands-on experience with the code
-2. **Experiment with different programs** - Try tracing various applications
-3. **Explore system call documentation** - Understand what each syscall does
-4. **Join the community** - Connect with other security researchers and reverse engineers
+1. **Extend to Network Monitoring** - Add socket syscall monitoring
+2. **Add Filtering Capabilities** - Implement configurable filtering rules
+3. **Create Output Formats** - JSON, CSV, or database integration
+4. **Build Alert System** - Trigger alerts on suspicious patterns
 
 ## Additional Resources
 
-### Essential Documentation
-- [Linux ptrace(2) man page](https://man7.org/linux/man-pages/man2/ptrace.2.html) - Complete reference
-- [Linux System Call Table](https://syscalls.kernelgrok.com/) - Syscall numbers and signatures
-- [Intel x86-64 ABI](https://software.intel.com/sites/default/files/article/402129/mpx-linux64-abi.pdf) - Register usage conventions
+### Python Security Libraries
+- [psutil](https://github.com/giampaolo/psutil) - Cross-platform process utilities
+- [python-ptrace](https://github.com/vstinner/python-ptrace) - Pure Python ptrace library
 
-### Community Resources
-- [/r/ReverseEngineering](https://reddit.com/r/ReverseEngineering) - Active community discussions
-- [Binary Analysis Discord](https://discord.gg/binaryanalysis) - Real-time chat with experts
-- [OWASP Reverse Engineering](https://owasp.org/www-community/controls/Static_Code_Analysis) - Security-focused resources
-
-### Advanced Tools
-- [Intel Pin](https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html) - Dynamic binary instrumentation
-- [Frida](https://frida.re/) - Dynamic instrumentation toolkit
-- [ltrace](https://man7.org/linux/man-pages/man1/ltrace.1.html) - Library call tracing
-
-### Code Repository
-Complete source code for all examples is available at: [GitHub Repository](https://github.com/0x96f/ptrace-hooking-series)
+### System Programming
+- [Linux Programming Interface](http://man7.org/tlpi/) - Comprehensive system programming guide
+- [ptrace(2) Manual](https://man7.org/linux/man-pages/man2/ptrace.2.html) - Official ptrace documentation
+- [System Call Table](https://syscalls.mebeim.net/?table=x86/64/x64/v6.2) - x86_64 syscall reference
 
 ---
 
-*This post is part of a comprehensive series on Linux internals and security research. Follow for more deep dives into system-level programming and reverse engineering techniques.*
+*This implementation provides a foundation for building sophisticated file access monitoring tools. The modular design allows for easy extension to cover additional syscalls, output formats, and integration with security frameworks.*

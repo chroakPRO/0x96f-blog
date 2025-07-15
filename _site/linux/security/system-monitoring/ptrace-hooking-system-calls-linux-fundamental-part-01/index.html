@@ -1,4 +1,289 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.4.1">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2025-07-15T22:24:02+02:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">0x96f blog</title><subtitle>Personal exploration</subtitle><author><name>Chris Ek</name></author><entry><title type="html">ptrace System Call Hooking in Python - Building a File Access Monitor</title><link href="http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/" rel="alternate" type="text/html" title="ptrace System Call Hooking in Python - Building a File Access Monitor" /><published>2025-07-15T00:00:00+02:00</published><updated>2025-07-15T00:00:00+02:00</updated><id>http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01</id><content type="html" xml:base="http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/"><![CDATA[<h2 id="overview">Overview</h2>
+<!doctype html>
+<!--
+  Minimal Mistakes Jekyll Theme 4.27.1 by Michael Rose
+  Copyright 2013-2025 Michael Rose - mademistakes.com | @mmistakes
+  Free for personal and commercial use under the MIT license
+  https://github.com/mmistakes/minimal-mistakes/blob/master/LICENSE
+-->
+
+<html lang="en-US" class="no-js">
+  <head>
+    <meta charset="utf-8">
+
+<!-- begin _includes/seo.html --><title>ptrace System Call Hooking in Python - Building a File Access Monitor - 0x96f blog</title>
+<meta name="description" content="Learn to build a Python-based file access monitoring tool using ptrace to intercept and analyze system calls for security monitoring and process behavior analysis.">
+
+
+  <meta name="author" content="Chris Ek">
+  
+  <meta property="article:author" content="Chris Ek">
+  
+
+
+<meta property="og:type" content="article">
+<meta property="og:locale" content="en_US">
+<meta property="og:site_name" content="0x96f blog">
+<meta property="og:title" content="ptrace System Call Hooking in Python - Building a File Access Monitor">
+<meta property="og:url" content="http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/">
+
+
+  <meta property="og:description" content="Learn to build a Python-based file access monitoring tool using ptrace to intercept and analyze system calls for security monitoring and process behavior analysis.">
+
+
+
+
+
+
+
+  <meta property="article:published_time" content="2025-07-15T00:00:00+02:00">
+
+
+
+
+
+  
+
+  
+
+
+<link rel="canonical" href="http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/">
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- end _includes/seo.html -->
+
+
+
+  <link href="/feed.xml" type="application/atom+xml" rel="alternate" title="0x96f blog Feed">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script>
+  document.documentElement.className = document.documentElement.className.replace(/\bno-js\b/g, '') + ' js ';
+  
+</script>
+
+<!-- For all browsers -->
+<link rel="stylesheet" href="/assets/css/main.css">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@latest/css/all.min.css"></noscript>
+
+
+
+    <!-- start custom head snippets -->
+
+<!-- insert favicons. use https://realfavicongenerator.net/ -->
+
+<!-- end custom head snippets -->
+
+  </head>
+
+  <body class="layout--single" dir="ltr">
+    <nav class="skip-links">
+  <ul>
+    <li><a href="#site-nav" class="screen-reader-shortcut">Skip to primary navigation</a></li>
+    <li><a href="#main" class="screen-reader-shortcut">Skip to content</a></li>
+    <li><a href="#footer" class="screen-reader-shortcut">Skip to footer</a></li>
+  </ul>
+</nav>
+
+    
+
+<div class="masthead">
+  <div class="masthead__inner-wrap">
+    <div class="masthead__menu">
+      <nav id="site-nav" class="greedy-nav">
+        
+        <a class="site-title" href="/">
+          0x96f blog
+          
+        </a>
+        <ul class="visible-links"></ul>
+        
+        <button class="greedy-nav__toggle hidden" type="button">
+          <span class="visually-hidden">Toggle menu</span>
+          <div class="navicon"></div>
+        </button>
+        <ul class="hidden-links hidden"></ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+
+    <div class="initial-content">
+      
+
+
+
+
+
+<div id="main" role="main">
+  
+  <div class="sidebar sticky">
+  
+
+
+<div itemscope itemtype="https://schema.org/Person" class="h-card">
+
+  
+
+  <div class="author__content">
+    <h3 class="author__name p-name" itemprop="name">
+      <a class="u-url" rel="me" href="http://localhost:4000/" itemprop="url">Chris Ek</a>
+    </h3>
+    
+      <div class="author__bio p-note" itemprop="description">
+        <p>It’s like we’ve forgotten who we are. Explorers, pioneers, not caretakers… Cooper</p>
+
+      </div>
+    
+  </div>
+
+  <div class="author__urls-wrapper">
+    <button class="btn btn--inverse">Follow</button>
+    <ul class="author__urls social-icons">
+      
+        <li itemprop="homeLocation" itemscope itemtype="https://schema.org/Place">
+          <i class="fas fa-fw fa-map-marker-alt" aria-hidden="true"></i> <span itemprop="name" class="p-locality">Sweden</span>
+        </li>
+      
+
+      
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+          
+        
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      <!--
+  <li>
+    <a href="http://link-to-whatever-social-network.com/user/" itemprop="sameAs" rel="nofollow noopener noreferrer me">
+      <i class="fas fa-fw" aria-hidden="true"></i> Custom Social Profile Link
+    </a>
+  </li>
+-->
+    </ul>
+  </div>
+</div>
+
+  
+  </div>
+
+
+
+  <article class="page" itemscope itemtype="https://schema.org/CreativeWork">
+    <meta itemprop="headline" content="ptrace System Call Hooking in Python - Building a File Access Monitor">
+    <meta itemprop="description" content="Learn to build a Python-based file access monitoring tool using ptrace to intercept and analyze system calls for security monitoring and process behavior analysis.">
+    <meta itemprop="datePublished" content="2025-07-15T00:00:00+02:00">
+    
+
+    <div class="page__inner-wrap">
+      
+        <header>
+          <h1 id="page-title" class="page__title" itemprop="headline">
+            <a href="http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/" itemprop="url">ptrace System Call Hooking in Python - Building a File Access Monitor
+</a>
+          </h1>
+          
+
+  <p class="page__meta">
+    
+
+    
+
+    
+      
+      
+
+      <span class="page__meta-readtime">
+        <i class="far fa-clock" aria-hidden="true"></i>
+        
+          9 minute read
+        
+      </span>
+    
+  </p>
+
+
+        </header>
+      
+
+      <section class="page__content" itemprop="text">
+        
+          <aside class="sidebar__right ">
+            <nav class="toc">
+              <header><h4 class="nav__title"><i class="fas fa-cog"></i> Contents</h4></header>
+              <ul class="toc__menu"><li><a href="#overview">Overview</a></li><li><a href="#introduction">Introduction</a><ul><li><a href="#the-need-for-file-access-monitoring">The Need for File Access Monitoring</a></li><li><a href="#why-ptrace--python">Why ptrace + Python?</a></li><li><a href="#what-well-build">What We’ll Build</a></li></ul></li><li><a href="#problem-statement">Problem Statement</a><ul><li><a href="#the-challenge">The Challenge</a></li><li><a href="#our-solution-approach">Our Solution Approach</a></li></ul></li><li><a href="#core-concepts">Core Concepts</a><ul><li><a href="#concept-1-python-ctypes-and-ptrace-integration">Concept 1: Python ctypes and ptrace Integration</a></li><li><a href="#concept-2-file-system-call-interception">Concept 2: File System Call Interception</a></li><li><a href="#concept-3-process-context-and-metadata">Concept 3: Process Context and Metadata</a></li></ul></li><li><a href="#step-by-step-implementation">Step-by-Step Implementation</a><ul><li><a href="#phase-1-core-infrastructure">Phase 1: Core Infrastructure</a><ul><li><a href="#step-1-main-entry-point-mainpy">Step 1: Main Entry Point (main.py)</a></li><li><a href="#step-2-system-call-definitions-syscallspy">Step 2: System Call Definitions (syscalls.py)</a></li></ul></li><li><a href="#phase-2-process-tracing-implementation">Phase 2: Process Tracing Implementation</a><ul><li><a href="#step-3-core-tracer-class-tracerpy">Step 3: Core Tracer Class (tracer.py)</a></li><li><a href="#step-4-memory-reading-and-syscall-parsing">Step 4: Memory Reading and Syscall Parsing</a></li></ul></li><li><a href="#phase-3-enhanced-logging-and-monitoring">Phase 3: Enhanced Logging and Monitoring</a><ul><li><a href="#step-5-rich-file-access-logging">Step 5: Rich File Access Logging</a></li><li><a href="#step-6-utility-functions-utilspy">Step 6: Utility Functions (utils.py)</a></li></ul></li></ul></li><li><a href="#real-world-examples">Real-World Examples</a><ul><li><a href="#example-1-security-monitoring">Example 1: Security Monitoring</a></li><li><a href="#example-2-application-behavior-analysis">Example 2: Application Behavior Analysis</a></li></ul></li><li><a href="#performance-considerations">Performance Considerations</a><ul><li><a href="#overhead-analysis">Overhead Analysis</a></li><li><a href="#optimization-strategies">Optimization Strategies</a></li></ul></li><li><a href="#common-pitfalls--solutions">Common Pitfalls &amp; Solutions</a><ul><li><a href="#pitfall-1-permission-errors">Pitfall 1: Permission Errors</a></li><li><a href="#pitfall-2-process-state-confusion">Pitfall 2: Process State Confusion</a></li></ul></li><li><a href="#best-practices">Best Practices</a><ul><li><a href="#security-considerations">Security Considerations</a></li><li><a href="#code-organization">Code Organization</a></li></ul></li><li><a href="#usage-examples">Usage Examples</a><ul><li><a href="#basic-file-monitoring">Basic File Monitoring</a></li><li><a href="#advanced-use-cases">Advanced Use Cases</a></li></ul></li><li><a href="#conclusion">Conclusion</a><ul><li><a href="#key-takeaways">Key Takeaways</a></li><li><a href="#next-steps">Next Steps</a></li></ul></li><li><a href="#additional-resources">Additional Resources</a><ul><li><a href="#python-security-libraries">Python Security Libraries</a></li><li><a href="#system-programming">System Programming</a></li></ul></li></ul>
+            </nav>
+          </aside>
+        
+        <h2 id="overview">Overview</h2>
 <p><strong>Target Audience:</strong> Security researchers, system administrators, Python developers<br />
 <strong>Reading Time:</strong> 15-20 minutes<br />
 <strong>Difficulty Level:</strong> Intermediate to Advanced<br />
@@ -598,4 +883,163 @@ python3 main.py 1234 | <span class="nb">grep</span> <span class="s1">'\.conf\|\.
 
 <hr />
 
-<p><em>This implementation provides a foundation for building sophisticated file access monitoring tools. The modular design allows for easy extension to cover additional syscalls, output formats, and integration with security frameworks.</em></p>]]></content><author><name>Chris Ek</name></author><category term="linux" /><category term="security" /><category term="system-monitoring" /><category term="ptrace" /><category term="python" /><category term="syscalls" /><category term="file-monitoring" /><category term="security-tools" /><summary type="html"><![CDATA[Learn to build a Python-based file access monitoring tool using ptrace to intercept and analyze system calls for security monitoring and process behavior analysis.]]></summary></entry></feed>
+<p><em>This implementation provides a foundation for building sophisticated file access monitoring tools. The modular design allows for easy extension to cover additional syscalls, output formats, and integration with security frameworks.</em></p>
+
+        
+      </section>
+
+      <footer class="page__meta">
+        
+        
+  
+
+
+  
+
+  <p class="page__taxonomy">
+    <strong><i class="fas fa-fw fa-tags" aria-hidden="true"></i> Tags: </strong>
+    <span itemprop="keywords">
+    
+      <a href="/tags/#file-monitoring" class="page__taxonomy-item p-category" rel="tag">file-monitoring</a><span class="sep">, </span>
+    
+      <a href="/tags/#ptrace" class="page__taxonomy-item p-category" rel="tag">ptrace</a><span class="sep">, </span>
+    
+      <a href="/tags/#python" class="page__taxonomy-item p-category" rel="tag">python</a><span class="sep">, </span>
+    
+      <a href="/tags/#security-tools" class="page__taxonomy-item p-category" rel="tag">security-tools</a><span class="sep">, </span>
+    
+      <a href="/tags/#syscalls" class="page__taxonomy-item p-category" rel="tag">syscalls</a>
+    
+    </span>
+  </p>
+
+
+
+
+  
+
+
+  
+
+  <p class="page__taxonomy">
+    <strong><i class="fas fa-fw fa-folder-open" aria-hidden="true"></i> Categories: </strong>
+    <span itemprop="keywords">
+    
+      <a href="/categories/#linux" class="page__taxonomy-item p-category" rel="tag">linux</a><span class="sep">, </span>
+    
+      <a href="/categories/#security" class="page__taxonomy-item p-category" rel="tag">security</a><span class="sep">, </span>
+    
+      <a href="/categories/#system-monitoring" class="page__taxonomy-item p-category" rel="tag">system-monitoring</a>
+    
+    </span>
+  </p>
+
+
+        
+
+  <p class="page__date"><strong><i class="fas fa-fw fa-calendar-alt" aria-hidden="true"></i> Updated:</strong> <time class="dt-published" datetime="2025-07-15T00:00:00+02:00">July 15, 2025</time></p>
+
+      </footer>
+
+      <section class="page__share">
+  <h4 class="page__share-title">Share on</h4>
+
+  <a href="https://x.com/intent/tweet?text=ptrace+System+Call+Hooking+in+Python+-+Building+a+File+Access+Monitor%20http%3A%2F%2Flocalhost%3A4000%2Flinux%2Fsecurity%2Fsystem-monitoring%2Fptrace-hooking-system-calls-linux-fundamental-part-01%2F" class="btn btn--x" aria-label="Share on X" onclick="window.open(this.href, 'window', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;" title="Share on X">
+    <i class="fab fa-fw fa-x-twitter" aria-hidden="true"></i><span> X</span>
+  </a>
+
+  <a href="https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Flocalhost%3A4000%2Flinux%2Fsecurity%2Fsystem-monitoring%2Fptrace-hooking-system-calls-linux-fundamental-part-01%2F" class="btn btn--facebook" aria-label="Share on Facebook" onclick="window.open(this.href, 'window', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;" title="Share on Facebook">
+    <i class="fab fa-fw fa-facebook" aria-hidden="true"></i><span> Facebook</span>
+  </a>
+
+  <a href="https://www.linkedin.com/shareArticle?mini=true&url=http://localhost:4000/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/" class="btn btn--linkedin" aria-label="Share on LinkedIn" onclick="window.open(this.href, 'window', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;" title="Share on LinkedIn">
+    <i class="fab fa-fw fa-linkedin" aria-hidden="true"></i><span> LinkedIn</span>
+  </a>
+
+  <a href="https://bsky.app/intent/compose?text=ptrace+System+Call+Hooking+in+Python+-+Building+a+File+Access+Monitor%20http%3A%2F%2Flocalhost%3A4000%2Flinux%2Fsecurity%2Fsystem-monitoring%2Fptrace-hooking-system-calls-linux-fundamental-part-01%2F" class="btn btn--bluesky" onclick="window.open(this.href, 'window', 'left=20,top=20,width=500,height=500,toolbar=1,resizable=0'); return false;" title="Share on Bluesky">
+    <i class="fab fa-fw fa-bluesky" aria-hidden="true"></i><span> Bluesky</span>
+  </a>
+</section>
+
+
+      
+
+    </div>
+
+    
+  </article>
+
+  
+  
+    
+<div class="page__related">
+  
+  <h2 class="page__related-title">You may also enjoy</h2>
+  <div class="grid__wrapper">
+    
+      
+  </div>
+</div>
+
+  
+</div>
+
+      
+    </div>
+
+    
+
+    <div id="footer" class="page__footer">
+      <footer>
+        <!-- start custom footer snippets -->
+
+<!-- end custom footer snippets -->
+        
+
+<div class="page__footer-follow">
+  <ul class="social-icons">
+    
+      <li><strong>Follow:</strong></li>
+    
+
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+
+    
+      <li><a href="/feed.xml"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> Feed</a></li>
+    
+  </ul>
+</div>
+
+
+<div class="page__footer-copyright">&copy; 2013 - 2025 <a href="http://localhost:4000">0x96f blog</a>. Powered by <a href="https://jekyllrb.com" rel="nofollow">Jekyll</a> &amp; <a href="https://mademistakes.com/work/jekyll-themes/minimal-mistakes/" rel="nofollow">Minimal Mistakes</a>.</div>
+
+      </footer>
+    </div>
+
+    
+  <script src="/assets/js/main.min.js"></script>
+
+
+
+
+
+
+
+
+
+  </body>
+</html>

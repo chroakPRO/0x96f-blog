@@ -1,7 +1,7 @@
 var store = [{
-        "title": "My First Blog Post",
-        "excerpt":"Welcome to my blog! This is my first post using the Minimal Mistakes Jekyll theme. Getting Started This is how you create a post in Jekyll. Each post goes in the _posts directory and follows the naming convention: YYYY-MM-DD-title.md Front Matter The section at the top between the --- marks...","categories": ["blog","getting-started"],
-        "tags": ["jekyll","minimal-mistakes"],
-        "url": "/blog/getting-started/my-first-post/",
+        "title": "ptrace System Call Hooking in Python - Building a File Access Monitor",
+        "excerpt":"Overview Target Audience: Security researchers, system administrators, Python developers Reading Time: 15-20 minutes Difficulty Level: Intermediate to Advanced What You’ll Learn: Building ptrace-based monitoring tools in Python Intercepting file-related system calls (open, read, write, close) Process behavior analysis and security monitoring Python ctypes integration with low-level system interfaces Real-time file...","categories": ["linux","security","system-monitoring"],
+        "tags": ["ptrace","python","syscalls","file-monitoring","security-tools"],
+        "url": "/linux/security/system-monitoring/ptrace-hooking-system-calls-linux-fundamental-part-01/",
         "teaser": null
       }]
